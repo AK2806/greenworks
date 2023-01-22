@@ -6,6 +6,8 @@
 
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
+
 #include "nan.h"
 #include "steam/steam_api.h"
 #include "v8.h"
@@ -13,6 +15,7 @@
 #include "greenworks_unzip.h"
 #include "greenworks_zip.h"
 
+#include "steam_leaderboard.h"
 
 namespace {
 
@@ -24,6 +27,18 @@ struct FilesContentContainer {
     }
   }
 };
+
+v8::Local<v8::Object> ConvertToJsObject(const LeaderboardEntry_t &entry)
+{
+  v8::Local<v8::Object> result = Nan::New<v8::Object>();
+
+  Nan::Set(result, Nan::New("globalRank").ToLocalChecked(),
+           Nan::New(entry.m_nGlobalRank));
+  Nan::Set(result, Nan::New("score").ToLocalChecked(),
+           Nan::New(entry.m_nScore));
+
+  return result;
+}
 
 };  // namespace
 
@@ -218,6 +233,218 @@ void ClearAchievementWorker::Execute() {
   if (!steam_user_stats->StoreStats()) {
     SetErrorMessage("Fails on uploading user stats to server.");
     return;
+  }
+}
+
+LeaderBoardUploadScoreWorker::LeaderBoardUploadScoreWorker(std::string leaderboard_name, int score,
+                                                           ELeaderboardUploadScoreMethod method,
+                                                           Nan::Callback *success_callback,
+                                                           Nan::Callback *error_callback)
+    : SteamCallbackAsyncWorker(success_callback, error_callback),
+      leader_board_name_(leaderboard_name), score_(score), method_(method)
+{
+}
+
+void LeaderBoardUploadScoreWorker::Execute()
+{
+  SteamLeaderboard_t leaderBoard = greenworks::leaderboard::leaderboardHandlePool[leader_board_name_];
+  if (leaderBoard == NULL)
+  {
+    greenworks::leaderboard::LeaderBoardFinder leaderBoardFinder = greenworks::leaderboard::LeaderBoardFinder();
+    leaderBoard = leaderBoardFinder.SyncFindLeaderBoard(leader_board_name_);
+  }
+  if (leaderBoard == NULL)
+  {
+    SetErrorMessage("Error on finding leader board");
+    is_completed_ = true;
+    return;
+  }
+  greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
+
+  SteamAPICall_t steam_api_call =
+      SteamUserStats()->UploadLeaderboardScore(leaderBoard, method_, score_, NULL, 0);
+  call_result_.Set(steam_api_call, this, &LeaderBoardUploadScoreWorker::OnUploadScore);
+
+  WaitForCompleted();
+}
+
+void LeaderBoardUploadScoreWorker::OnUploadScore(
+    LeaderboardScoreUploaded_t *result, bool io_failure)
+{
+  if (io_failure)
+  {
+    SetErrorMessage("Error on uploading score to leader board: Steam API IO Failure");
+  }
+  else if (!result->m_bSuccess)
+  {
+    SetErrorMessage("Error on uploading score to leader board.");
+  }
+  is_completed_ = true;
+}
+
+void LeaderBoardUploadScoreWorker::HandleOKCallback()
+{
+  Nan::HandleScope scope;
+
+  v8::Local<v8::Value> argv[] = {};
+  Nan::AsyncResource resource("greenworks:LeaderBoardUploadScoreWorker.HandleOKCallback");
+  callback->Call(0, argv, &resource);
+}
+
+LeaderBoardAllDownloadWorker::LeaderBoardAllDownloadWorker(std::string leaderboard_name,
+                                                           Nan::Callback *success_callback,
+                                                           Nan::Callback *error_callback)
+    : SteamCallbackAsyncWorker(success_callback, error_callback),
+      leader_board_name_(leaderboard_name), entries_(NULL), entries_count_(0)
+{
+}
+
+void LeaderBoardAllDownloadWorker::Execute()
+{
+  SteamLeaderboard_t leaderBoard = greenworks::leaderboard::leaderboardHandlePool[leader_board_name_];
+  if (leaderBoard == NULL)
+  {
+    greenworks::leaderboard::LeaderBoardFinder leaderBoardFinder = greenworks::leaderboard::LeaderBoardFinder();
+    leaderBoard = leaderBoardFinder.SyncFindLeaderBoard(leader_board_name_);
+  }
+  if (leaderBoard == NULL)
+  {
+    SetErrorMessage("Error on finding leader board");
+    is_completed_ = true;
+    return;
+  }
+  greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
+
+  // 加载最多前一万名的数据
+  int entries_count = SteamUserStats()->GetLeaderboardEntryCount(leaderBoard);
+  SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntries(
+      leaderBoard, ELeaderboardDataRequest::k_ELeaderboardDataRequestGlobal, 1, std::min(entries_count, 10000));
+  call_result_.Set(steam_api_call, this, &LeaderBoardAllDownloadWorker::OnDownloadScore);
+
+  WaitForCompleted();
+}
+
+void LeaderBoardAllDownloadWorker::OnDownloadScore(
+    LeaderboardScoresDownloaded_t *result, bool io_failure)
+{
+  if (io_failure)
+  {
+    SetErrorMessage("Error on downloading scores from leader board: Steam API IO Failure");
+  }
+  entries_count_ = result->m_cEntryCount;
+  if (entries_ != NULL) {
+    delete[] entries_;
+  }
+  entries_ = new LeaderboardEntry_t[entries_count_];
+
+  for (int index = 0; index < entries_count_; index++)
+  {
+    SteamUserStats()->GetDownloadedLeaderboardEntry(
+        result->m_hSteamLeaderboardEntries, index, &entries_[index], NULL, 0);
+  }
+
+  is_completed_ = true;
+}
+
+void LeaderBoardAllDownloadWorker::HandleOKCallback()
+{
+  Nan::HandleScope scope;
+
+  v8::Local<v8::Array> scores = Nan::New<v8::Array>(entries_count_);
+  for (size_t i = 0; i < entries_count_; ++i)
+  {
+    Nan::Set(scores, i, ConvertToJsObject(entries_[i]));
+  }
+  v8::Local<v8::Value> argv[] = {scores};
+  Nan::AsyncResource resource("greenworks:LeaderBoardAllDownloadWorker.HandleOKCallback");
+  callback->Call(1, argv, &resource);
+}
+
+LeaderBoardAllDownloadWorker::~LeaderBoardAllDownloadWorker()
+{
+  if (entries_ != NULL)
+  {
+    delete[] entries_;
+    entries_count_ = 0;
+  }
+}
+
+LeaderBoardDownloadUsersWorker::LeaderBoardDownloadUsersWorker(std::string leaderboard_name,
+                                                               CSteamID *users, int user_count,
+                                                               Nan::Callback *success_callback,
+                                                               Nan::Callback *error_callback)
+    : SteamCallbackAsyncWorker(success_callback, error_callback),
+      leader_board_name_(leaderboard_name), users_(users), user_count_(user_count), entries_(NULL), entries_count_(0)
+{
+}
+
+void LeaderBoardDownloadUsersWorker::Execute()
+{
+  SteamLeaderboard_t leaderBoard = greenworks::leaderboard::leaderboardHandlePool[leader_board_name_];
+  if (leaderBoard == NULL)
+  {
+    greenworks::leaderboard::LeaderBoardFinder leaderBoardFinder = greenworks::leaderboard::LeaderBoardFinder();
+    leaderBoard = leaderBoardFinder.SyncFindLeaderBoard(leader_board_name_);
+  }
+  if (leaderBoard == NULL)
+  {
+    SetErrorMessage("Error on finding leader board");
+    is_completed_ = true;
+    return;
+  }
+  greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
+
+  // 加载当前用户的特定排行榜数据
+  SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntriesForUsers(
+      leaderBoard, users_, user_count_);
+  call_result_.Set(steam_api_call, this, &LeaderBoardDownloadUsersWorker::OnDownloadScore);
+
+  WaitForCompleted();
+}
+
+void LeaderBoardDownloadUsersWorker::OnDownloadScore(
+    LeaderboardScoresDownloaded_t *result, bool io_failure)
+{
+  if (io_failure)
+  {
+    SetErrorMessage("Error on downloading scores from leader board: Steam API IO Failure");
+  }
+  entries_count_ = result->m_cEntryCount;
+  if (entries_ != NULL)
+  {
+    delete[] entries_;
+  }
+  entries_ = new LeaderboardEntry_t[entries_count_];
+
+  for (int index = 0; index < entries_count_; index++)
+  {
+    SteamUserStats()->GetDownloadedLeaderboardEntry(
+        result->m_hSteamLeaderboardEntries, index, &entries_[index], NULL, 0);
+  }
+
+  is_completed_ = true;
+}
+
+void LeaderBoardDownloadUsersWorker::HandleOKCallback()
+{
+  Nan::HandleScope scope;
+
+  v8::Local<v8::Array> scores = Nan::New<v8::Array>(entries_count_);
+  for (size_t i = 0; i < entries_count_; ++i)
+  {
+    Nan::Set(scores, i, ConvertToJsObject(entries_[i]));
+  }
+  v8::Local<v8::Value> argv[] = {scores};
+  Nan::AsyncResource resource("greenworks:LeaderBoardDownloadUsersWorker.HandleOKCallback");
+  callback->Call(1, argv, &resource);
+}
+
+LeaderBoardDownloadUsersWorker::~LeaderBoardDownloadUsersWorker()
+{
+  if (entries_ != NULL)
+  {
+    delete[] entries_;
+    entries_count_ = 0;
   }
 }
 
