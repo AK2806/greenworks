@@ -118,6 +118,49 @@ class ClearAchievementWorker : public SteamAsyncWorker {
   bool success_;
 };
 
+class LeaderBoardUploadScoreWorker : public SteamCallbackAsyncWorker
+{
+public:
+  LeaderBoardUploadScoreWorker(std::string leaderboard_name, int score,
+                               ELeaderboardUploadScoreMethod method,
+                               Nan::Callback *success_callback,
+                               Nan::Callback *error_callback);
+
+  void OnUploadScore(LeaderboardScoreUploaded_t *result,
+                     bool io_failure);
+
+  void Execute() override;
+  void HandleOKCallback() override;
+
+private:
+  std::string leader_board_name_;
+  int score_;
+  ELeaderboardUploadScoreMethod method_;
+  CCallResult<LeaderBoardUploadScoreWorker, LeaderboardScoreUploaded_t> call_result_;
+};
+
+class LeaderBoardAllDownloadWorker : public SteamCallbackAsyncWorker
+{
+public:
+  LeaderBoardAllDownloadWorker(std::string leaderboard_name,
+                               Nan::Callback *success_callback,
+                               Nan::Callback *error_callback);
+
+  void OnDownloadScore(LeaderboardScoresDownloaded_t *result,
+                       bool io_failure);
+
+  void Execute() override;
+  void HandleOKCallback() override;
+
+  ~LeaderBoardAllDownloadWorker() override;
+
+private:
+  std::string leader_board_name_;
+  CCallResult<LeaderBoardUploadScoreWorker, LeaderboardScoresDownloaded_t> call_result_;
+  LeaderboardEntry_t *entries_;
+  int entries_count_;
+};
+
 class GetNumberOfPlayersWorker : public SteamCallbackAsyncWorker {
  public:
   GetNumberOfPlayersWorker(Nan::Callback* success_callback,

@@ -45,8 +45,8 @@
         }],
       ],
       'variables': {
-        'redist_bin_dir': 'osx32',
-        'public_lib_dir': 'osx32',
+        'redist_bin_dir': 'osx',
+        'public_lib_dir': 'osx',
         'lib_steam': 'libsteam_api.dylib',
         'lib_encryptedappticket': 'libsdkencryptedappticket.dylib',
       },
@@ -90,6 +90,7 @@
         'src/api/steam_api_settings.cc',
         'src/api/steam_api_stats.cc',
         'src/api/steam_api_workshop.cc',
+        'src/api/steam_api_leaderboard.cc',
         'src/greenworks_api.cc',
         'src/greenworks_async_workers.cc',
         'src/greenworks_async_workers.h',
@@ -110,6 +111,8 @@
         'src/steam_event.h',
         'src/steam_id.cc',
         'src/steam_id.h',
+        'src/steam_leaderboard.cc',
+        'src/steam_leaderboard.h',
       ],
       'include_dirs': [
         'deps',
