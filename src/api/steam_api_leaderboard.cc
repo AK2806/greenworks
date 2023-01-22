@@ -33,7 +33,7 @@ NAN_METHOD(DownloadLeaderboardAll) {
   info.GetReturnValue().Set(Nan::Undefined());
 }
 
-NAN_METHOD(DownloadLeaderboardCurrentUserScore)
+NAN_METHOD(DownloadLeaderboardCurrentUser)
 {
   Nan::HandleScope scope;
 
@@ -82,6 +82,7 @@ NAN_METHOD(UploadLeaderboardScore) {
 
 void RegisterAPIs(v8::Local<v8::Object> target) {
   SET_FUNCTION("downloadLeaderboardAll", DownloadLeaderboardAll);
+  SET_FUNCTION("downloadLeaderboardCurrentUser", DownloadLeaderboardCurrentUser);
   SET_FUNCTION("uploadLeaderboardScore", UploadLeaderboardScore);
 }
 
