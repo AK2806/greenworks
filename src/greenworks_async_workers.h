@@ -161,6 +161,31 @@ private:
   int entries_count_;
 };
 
+class LeaderBoardDownloadUsersWorker : public SteamCallbackAsyncWorker
+{
+public:
+  LeaderBoardDownloadUsersWorker(std::string leaderboard_name,
+                                 CSteamID *users, int user_count,
+                                 Nan::Callback *success_callback,
+                                 Nan::Callback *error_callback);
+
+  void OnDownloadScore(LeaderboardScoresDownloaded_t *result,
+                       bool io_failure);
+
+  void Execute() override;
+  void HandleOKCallback() override;
+
+  ~LeaderBoardDownloadUsersWorker() override;
+
+private:
+  std::string leader_board_name_;
+  CSteamID *users_;
+  int user_count_;
+  CCallResult<LeaderBoardDownloadUsersWorker, LeaderboardScoresDownloaded_t> call_result_;
+  LeaderboardEntry_t *entries_;
+  int entries_count_;
+};
+
 class GetNumberOfPlayersWorker : public SteamCallbackAsyncWorker {
  public:
   GetNumberOfPlayersWorker(Nan::Callback* success_callback,

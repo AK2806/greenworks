@@ -368,6 +368,85 @@ LeaderBoardAllDownloadWorker::~LeaderBoardAllDownloadWorker()
   }
 }
 
+LeaderBoardDownloadUsersWorker::LeaderBoardDownloadUsersWorker(std::string leaderboard_name,
+                                                               CSteamID *users, int user_count,
+                                                               Nan::Callback *success_callback,
+                                                               Nan::Callback *error_callback)
+    : SteamCallbackAsyncWorker(success_callback, error_callback),
+      leader_board_name_(leaderboard_name), users_(users), user_count_(user_count), entries_(NULL), entries_count_(0)
+{
+}
+
+void LeaderBoardDownloadUsersWorker::Execute()
+{
+  SteamLeaderboard_t leaderBoard = greenworks::leaderboard::leaderboardHandlePool[leader_board_name_];
+  if (leaderBoard == NULL)
+  {
+    greenworks::leaderboard::LeaderBoardFinder leaderBoardFinder = greenworks::leaderboard::LeaderBoardFinder();
+    leaderBoard = leaderBoardFinder.SyncFindLeaderBoard(leader_board_name_);
+  }
+  if (leaderBoard == NULL)
+  {
+    SetErrorMessage("Error on finding leader board");
+    is_completed_ = true;
+    return;
+  }
+  greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
+
+  // 加载当前用户的特定排行榜数据
+  SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntriesForUsers(
+      leaderBoard, users_, user_count_);
+  call_result_.Set(steam_api_call, this, &LeaderBoardDownloadUsersWorker::OnDownloadScore);
+
+  WaitForCompleted();
+}
+
+void LeaderBoardDownloadUsersWorker::OnDownloadScore(
+    LeaderboardScoresDownloaded_t *result, bool io_failure)
+{
+  if (io_failure)
+  {
+    SetErrorMessage("Error on downloading scores from leader board: Steam API IO Failure");
+  }
+  entries_count_ = result->m_cEntryCount;
+  if (entries_ != NULL)
+  {
+    delete[] entries_;
+  }
+  entries_ = new LeaderboardEntry_t[entries_count_];
+
+  for (int index = 0; index < entries_count_; index++)
+  {
+    SteamUserStats()->GetDownloadedLeaderboardEntry(
+        result->m_hSteamLeaderboardEntries, index, &entries_[index], NULL, 0);
+  }
+
+  is_completed_ = true;
+}
+
+void LeaderBoardDownloadUsersWorker::HandleOKCallback()
+{
+  Nan::HandleScope scope;
+
+  v8::Local<v8::Array> scores = Nan::New<v8::Array>(entries_count_);
+  for (size_t i = 0; i < entries_count_; ++i)
+  {
+    Nan::Set(scores, i, ConvertToJsObject(entries_[i]));
+  }
+  v8::Local<v8::Value> argv[] = {scores};
+  Nan::AsyncResource resource("greenworks:LeaderBoardDownloadUsersWorker.HandleOKCallback");
+  callback->Call(1, argv, &resource);
+}
+
+LeaderBoardDownloadUsersWorker::~LeaderBoardDownloadUsersWorker()
+{
+  if (entries_ != NULL)
+  {
+    delete[] entries_;
+    entries_count_ = 0;
+  }
+}
+
 GetNumberOfPlayersWorker::GetNumberOfPlayersWorker(
     Nan::Callback* success_callback, Nan::Callback* error_callback)
        :SteamCallbackAsyncWorker(success_callback, error_callback),
