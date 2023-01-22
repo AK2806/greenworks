@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include "steam_leaderboard.h"
+
 #include "nan.h"
+#include "greenworks_utils.h"
 
 namespace greenworks
 {

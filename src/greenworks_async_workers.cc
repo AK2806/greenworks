@@ -6,6 +6,8 @@
 
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
+
 #include "nan.h"
 #include "steam/steam_api.h"
 #include "v8.h"
@@ -30,8 +32,6 @@ v8::Local<v8::Object> ConvertToJsObject(const LeaderboardEntry_t &entry)
 {
   v8::Local<v8::Object> result = Nan::New<v8::Object>();
 
-  Nan::Set(result, Nan::New("userId").ToLocalChecked(),
-           Nan::New(entry.m_steamIDUser));
   Nan::Set(result, Nan::New("globalRank").ToLocalChecked(),
            Nan::New(entry.m_nGlobalRank));
   Nan::Set(result, Nan::New("score").ToLocalChecked(),
@@ -247,7 +247,7 @@ LeaderBoardUploadScoreWorker::LeaderBoardUploadScoreWorker(std::string leaderboa
 
 void LeaderBoardUploadScoreWorker::Execute()
 {
-  SteamLeaderboard_t leaderBoard = leaderboardHandlePool[leader_board_name_];
+  SteamLeaderboard_t leaderBoard = greenworks::leaderboard::leaderboardHandlePool[leader_board_name_];
   if (leaderBoard == NULL)
   {
     greenworks::leaderboard::LeaderBoardFinder leaderBoardFinder = greenworks::leaderboard::LeaderBoardFinder();
@@ -259,7 +259,7 @@ void LeaderBoardUploadScoreWorker::Execute()
     is_completed_ = true;
     return;
   }
-  leaderboardHandlePool[leader_board_name_] = leaderBoard;
+  greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
 
   SteamAPICall_t steam_api_call =
       SteamUserStats()->UploadLeaderboardScore(leaderBoard, method_, score_, NULL, 0);
@@ -301,7 +301,7 @@ LeaderBoardAllDownloadWorker::LeaderBoardAllDownloadWorker(std::string leaderboa
 
 void LeaderBoardAllDownloadWorker::Execute()
 {
-  SteamLeaderboard_t leaderBoard = leaderboardHandlePool[leader_board_name_];
+  SteamLeaderboard_t leaderBoard = greenworks::leaderboard::leaderboardHandlePool[leader_board_name_];
   if (leaderBoard == NULL)
   {
     greenworks::leaderboard::LeaderBoardFinder leaderBoardFinder = greenworks::leaderboard::LeaderBoardFinder();
@@ -313,12 +313,12 @@ void LeaderBoardAllDownloadWorker::Execute()
     is_completed_ = true;
     return;
   }
-  leaderboardHandlePool[leader_board_name_] = leaderBoard;
+  greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
 
   // 加载当前用户的特定排行榜数据
   SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntries(
       leaderBoard, ELeaderboardDataRequest::k_ELeaderboardDataRequestGlobal, 1, SteamUserStats()->GetLeaderboardEntryCount(leaderBoard));
-  call_result_.Set(steam_api_call, this, &LeaderBoardUploadScoreWorker::OnDownloadScore);
+  call_result_.Set(steam_api_call, this, &LeaderBoardAllDownloadWorker::OnDownloadScore);
 
   WaitForCompleted();
 }
@@ -330,7 +330,7 @@ void LeaderBoardAllDownloadWorker::OnDownloadScore(
   {
     SetErrorMessage("Error on downloading scores from leader board: Steam API IO Failure");
   }
-  entries_count_ = pCallback->m_cEntryCount;
+  entries_count_ = result->m_cEntryCount;
   if (entries_ != NULL) {
     delete[] entries_;
   }
@@ -339,7 +339,7 @@ void LeaderBoardAllDownloadWorker::OnDownloadScore(
   for (int index = 0; index < entries_count_; index++)
   {
     SteamUserStats()->GetDownloadedLeaderboardEntry(
-        pCallback->m_hSteamLeaderboardEntries, index, &entries_[index], NULL, 0);
+        result->m_hSteamLeaderboardEntries, index, &entries_[index], NULL, 0);
   }
 
   is_completed_ = true;
@@ -349,7 +349,7 @@ void LeaderBoardAllDownloadWorker::HandleOKCallback()
 {
   Nan::HandleScope scope;
 
-  v8::Local<v8::Array> scores[] = Nan::New<v8::Array>(entries_count_);
+  v8::Local<v8::Array> scores = Nan::New<v8::Array>(entries_count_);
   for (size_t i = 0; i < entries_count_; ++i)
   {
     Nan::Set(scores, i, ConvertToJsObject(entries_[i]));

@@ -156,7 +156,7 @@ public:
 
 private:
   std::string leader_board_name_;
-  CCallResult<LeaderBoardUploadScoreWorker, LeaderboardScoresDownloaded_t> call_result_;
+  CCallResult<LeaderBoardAllDownloadWorker, LeaderboardScoresDownloaded_t> call_result_;
   LeaderboardEntry_t *entries_;
   int entries_count_;
 };
