@@ -315,9 +315,10 @@ void LeaderBoardAllDownloadWorker::Execute()
   }
   greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
 
-  // 加载当前用户的特定排行榜数据
+  // 加载最多前一万名的数据
+  int entries_count = SteamUserStats()->GetLeaderboardEntryCount(leaderBoard);
   SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntries(
-      leaderBoard, ELeaderboardDataRequest::k_ELeaderboardDataRequestGlobal, 1, SteamUserStats()->GetLeaderboardEntryCount(leaderBoard));
+      leaderBoard, ELeaderboardDataRequest::k_ELeaderboardDataRequestGlobal, 1, std::min(entries_count, 10000));
   call_result_.Set(steam_api_call, this, &LeaderBoardAllDownloadWorker::OnDownloadScore);
 
   WaitForCompleted();
