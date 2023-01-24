@@ -286,9 +286,8 @@ void LeaderBoardUploadScoreWorker::HandleOKCallback()
 {
   Nan::HandleScope scope;
 
-  v8::Local<v8::Value> argv[] = {};
   Nan::AsyncResource resource("greenworks:LeaderBoardUploadScoreWorker.HandleOKCallback");
-  callback->Call(0, argv, &resource);
+  callback->Call(0, NULL, &resource);
 }
 
 LeaderBoardAllDownloadWorker::LeaderBoardAllDownloadWorker(std::string leaderboard_name,
@@ -315,10 +314,9 @@ void LeaderBoardAllDownloadWorker::Execute()
   }
   greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
 
-  // 加载最多前一万名的数据
-  int entries_count = SteamUserStats()->GetLeaderboardEntryCount(leaderBoard);
+  int entriesCount = SteamUserStats()->GetLeaderboardEntryCount(leaderBoard);
   SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntries(
-      leaderBoard, ELeaderboardDataRequest::k_ELeaderboardDataRequestGlobal, 1, std::min(entries_count, 10000));
+    leaderBoard, ELeaderboardDataRequest::k_ELeaderboardDataRequestGlobal, 1, entriesCount < 10000 ? entriesCount : 10000);
   call_result_.Set(steam_api_call, this, &LeaderBoardAllDownloadWorker::OnDownloadScore);
 
   WaitForCompleted();
@@ -394,7 +392,6 @@ void LeaderBoardDownloadUsersWorker::Execute()
   }
   greenworks::leaderboard::leaderboardHandlePool[leader_board_name_] = leaderBoard;
 
-  // 加载当前用户的特定排行榜数据
   SteamAPICall_t steam_api_call = SteamUserStats()->DownloadLeaderboardEntriesForUsers(
       leaderBoard, users_, user_count_);
   call_result_.Set(steam_api_call, this, &LeaderBoardDownloadUsersWorker::OnDownloadScore);
