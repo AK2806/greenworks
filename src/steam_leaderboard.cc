@@ -36,7 +36,6 @@ namespace greenworks
 
         void LeaderBoardFinder::onFindLeaderboard(LeaderboardFindResult_t *pResult, bool bIOFailure)
         {
-            // 检查调用期间是否遇到错误
             if (bIOFailure)
             {
                 m_CurrentLeaderboard = NULL;
